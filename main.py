@@ -21,5 +21,14 @@ class PTBModel(object):
 	"""docstring for PTBModel"""
 	def __init__(self, arg):
 		super(PTBModel, self).__init__()
-		self.arg = arg
 		
+		self._input = input_
+
+        batch_size = input_.batch_size
+        num_steps = input_.num_steps
+        emb_size = config.embed_size
+        F_size = config.cell_size
+        S_size = config.hyper_size
+        vocab_size = config.vocab_size
+
+        
