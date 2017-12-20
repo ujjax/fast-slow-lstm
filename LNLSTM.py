@@ -3,70 +3,61 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
 
-class LayerNormGRUCell(nn.GRUCell):
-    def __init__(self, input_size, hidden_size, bias=True):
-        super(LayerNormGRUCell, self).__init__(input_size, hidden_size, bias)
+import helper
+import config
 
-        self.gamma_ih = nn.Parameter(torch.ones(3 * self.hidden_size))
-        self.gamma_hh = nn.Parameter(torch.ones(3 * self.hidden_size))
-        self.eps = 0
+class LN_LSTMCell(object):
+	"""docstring for LN_LSTMCell"""
+	def __init__(self,args):
+		super(LN_LSTMCell, self).__init__()
 
-    def _layer_norm_x(self, x, g, b):
-        mean = x.mean(1).expand_as(x)
-        std = x.std(1).expand_as(x)
-        return g.expand_as(x) * ((x - mean) / (std + self.eps)) + b.expand_as(x)
+		self.num_units = args.num_units
+        self.f_bias = args.f_bias
 
-    def _layer_norm_h(self, x, g, b):
-        mean = x.mean(1).expand_as(x)
-        return g.expand_as(x) * (x - mean) + b.expand_as(x)
+        self.use_zoneout  = args.use_zoneout
+        self.zoneout_keep_h = args.zoneout_keep_h
+        self.zoneout_keep_c = args.zoneout_keep_c
 
-    def forward(self, x, h):
+        self.is_training = args.is_training
 
-        ih_rz = self._layer_norm_x(
-            torch.mm(x, self.weight_ih.narrow(0, 0, 2 * self.hidden_size).transpose(0, 1)),
-            self.gamma_ih.narrow(0, 0, 2 * self.hidden_size),
-            self.bias_ih.narrow(0, 0, 2 * self.hidden_size))
+    def forward(self, x ,state):
+    	h, c = state
 
-        hh_rz = self._layer_norm_h(
-            torch.mm(h, self.weight_hh.narrow(0, 0, 2 * self.hidden_size).transpose(0, 1)),
-            self.gamma_hh.narrow(0, 0, 2 * self.hidden_size),
-            self.bias_hh.narrow(0, 0, 2 * self.hidden_size))
+    	h_size = self.num_units
+    	x_size = int(x.size()[1])
 
-        rz = torch.sigmoid(ih_rz + hh_rz)
-        r = rz.narrow(1, 0, self.hidden_size)
-        z = rz.narrow(1, self.hidden_size, self.hidden_size)
+    	w_init = helper.orthogonal_initializer(1.0) 
+    	h_init = helper.orthogonal_initializer(1.0)
+    	b_init = nn.init.constant(0.0)
 
-        ih_n = self._layer_norm_x(
-            torch.mm(x, self.weight_ih.narrow(0, 2 * self.hidden_size, self.hidden_size).transpose(0, 1)),
-            self.gamma_ih.narrow(0, 2 * self.hidden_size, self.hidden_size),
-            self.bias_ih.narrow(0, 2 * self.hidden_size, self.hidden_size))
+    	W_xh = helper.orthogonal_initializer([x_size, 4 * h_size] , scale = 1.0)
 
-        hh_n = self._layer_norm_h(
-            torch.mm(h, self.weight_hh.narrow(0, 2 * self.hidden_size, self.hidden_size).transpose(0, 1)),
-            self.gamma_hh.narrow(0, 2 * self.hidden_size, self.hidden_size),
-            self.bias_hh.narrow(0, 2 * self.hidden_size, self.hidden_size))
+    	W_hh = helper.orthogonal_initializer([h_size, 4 * h_size] , scale = 1.0)
 
-        n = torch.tanh(ih_n + r * hh_n)
-        h = (1 - z) * n + z * h
-        return h
+    	bias = torch.zeros([4*h_size])
 
-class LayerNormGRU(nn.Module):
-    def __init__(self, input_size, hidden_size, bias=True):
-        super(LayerNormGRU, self).__init__()
-        self.cell = LayerNormGRUCell(input_size, hidden_size, bias)
-        self.weight_ih_l0 = self.cell.weight_ih
-        self.weight_hh_l0 = self.cell.weight_hh
-        self.bias_ih_l0 = self.cell.bias_ih
-        self.bias_hh_l0 = self.cell.bias_hh
+    	concat = torch.cat((x,h), 1)
+    	W_full = torch.cat((W_xh,W_hh),0)
 
-    def forward(self, xs, h):
-        h = h.squeeze(0)
-        ys = []
-        for i in range(xs.size(0)):
-            x = xs.narrow(0, i, 1).squeeze(0)
-            h = self.cell(x, h)
-            ys.append(h.unsqueeze(0))
-        y = torch.cat(ys, 0)
-        h = h.unsqueeze(0)
-        return y, h
+    	concat = torch.mm(concat,W_full) + bias
+    	concat = helper.layer_norm_all(concat, 4, h_size)
+
+    	i,j,f,o = torch.split(tensor = concat, split_size = int(concat.size()[1])//4, dim=1)
+
+    	new_c = c * F.sigmoid(f + self.f_bias) + F.sigmoid(i) * F.tanh(j)
+        new_h = F.tanh(helper.layer_norm(new_c)) * F.sigmoid(o)
+
+        if self.use_zoneout:
+            new_h, new_c = helper.zoneout(new_h, new_c, h, c, self.zoneout_keep_h,
+                                           self.zoneout_keep_c, self.is_training)
+
+        return new_h, (new_h, new_c)
+
+
+   	def zero_state(self, batch_size, dtype):
+        h = torch.zeros([batch_size, self.num_units]).type(dtype)
+        c = torch.zeros([batch_size, self.num_units]).type(dtype)
+        return (h, c)
+
