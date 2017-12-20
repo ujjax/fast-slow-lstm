@@ -23,24 +23,6 @@ def layer_norm_all(h, base, num_units):
     # Performs layer norm on multiple base at once (ie, i, g, j, o for lstm)
     #
     # Reshapes h in to perform layer norm in parallel
-    """
-    with tf.variable_scope(scope):
-        h_reshape = tf.reshape(h, [-1, base, num_units])
-        mean = tf.reduce_mean(h_reshape, [2], keep_dims=True)
-        var = tf.reduce_mean(tf.square(h_reshape - mean), [2], keep_dims=True)
-        epsilon = tf.constant(1e-3)
-        rstd = tf.rsqrt(var + epsilon)
-        h_reshape = (h_reshape - mean) * rstd
-        # reshape back to original
-        h = tf.reshape(h_reshape, [-1, base * num_units])
-
-        alpha = tf.get_variable('layer_norm_alpha', [4 * num_units],
-                                initializer=tf.constant_initializer(1.0), dtype=tf.float32)
-        bias = tf.get_variable('layer_norm_bias', [4 * num_units],
-                               initializer=tf.constant_initializer(0.0), dtype=tf.float32)
-
-    return (h * alpha) + bias
-	"""
     
     h_reshape = h_reshape.view([-1, base, num_units])
     mean = h_reshape.mean(dim = 2)
