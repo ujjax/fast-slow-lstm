@@ -27,7 +27,7 @@ class FSRNN(object):
 		if not training:
 			self.keep_prob = 1.0
 
-		self.dropout = nn.Dropout
+		self.dropout = nn.Dropout(p = 1-self.keep_prob)
 
 	def forward(self,inputs,state):
 		F_state = state[0]
@@ -39,7 +39,7 @@ class FSRNN(object):
 		F_output_drop = self.dropout(F_output)
 
 		S_output, S_state = self.slow_cell(F_output_drop, S_state)
-		S_output_drop = self.dropout(S_output, self.keep_prob)
+		S_output_drop = self.dropout(S_output)
 
 		F_output, F_state = self.fast_cells[1](S_output_drop, F_state)
 
@@ -51,8 +51,14 @@ class FSRNN(object):
 
 		return F_output_drop, (F_state, S_state)
 
+	def zero_state(self, batch_size, dtype = torch.FloatTensor):
+        F_state = self.fast_cells[0].zero_state(batch_size, dtype)
+        S_state = self.slow_cell.zero_state(batch_size, dtype)
+
+        return (F_state, S_state)
+
 	def initHidden():
-		
+
 
 
 		
