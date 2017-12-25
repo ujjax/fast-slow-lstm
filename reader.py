@@ -25,10 +25,12 @@ def _read_words(filename):
     return f.read().replace("\n", "<eos>").split()
 """
 
-def _read_words(filename):
-  with open(filename, "rb") as f:
-    return list(f.read())
+import tensorflow as tf
 
+
+def _read_words(filename):
+  with tf.gfile.GFile(filename, "rb") as f:
+    return list(f.read())
 
 def _build_vocab(filename):
   data = _read_words(filename)

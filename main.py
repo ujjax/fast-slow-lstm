@@ -51,6 +51,8 @@ class PTB_Model(nn.Module):
     def forward(self,inputs):
         state = self._initial_state
         outputs = []
+        inputs = self.embedding(inputs)
+        
         for time_step in range(self.num_steps):
             out , state = self.FS_cell(inputs[:,time_step,:],state)
             outputs.append(out)
@@ -80,6 +82,8 @@ def run_epoch(model, data, is_train=False, lr=1.0):
 
     for step, (x, y) in enumerate(reader.ptb_iterator(data, model.batch_size, model.num_steps)):
         inputs = Variable(torch.from_numpy(x.astype(np.int64)).transpose(0, 1).contiguous()).cuda()
+        inputs = torch.transpose(inputs, 0, 1)
+        
         model.zero_grad()
         #hidden = repackage_hidden(hidden)
         outputs, hidden = model(inputs)
@@ -104,7 +108,7 @@ if __name__ == "__main__":
     raw_data = reader.ptb_raw_data(data_path=args.data_path)
     train_data, valid_data, test_data, word_to_id, id_to_word = raw_data
     vocab_size = len(word_to_id)
-    print('Vocabluary size: {}'.format(vocab_size))
+    print('Vocabulary size: {}'.format(vocab_size))
     model = PTB_Model(embedding_dim=args.hidden_size, num_steps=args.num_steps, batch_size=args.batch_size,
                       vocab_size=vocab_size, num_layers=args.num_layers, dp_keep_prob=args.keep_prob)
     model.cuda()
