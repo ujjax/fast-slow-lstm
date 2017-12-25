@@ -14,21 +14,20 @@ def add_argument_group(name):
   arg_lists.append(arg)
   return arg
 
-num_steps = 150
-cell_size = 700
-hyper_size = 400
-embed_size = 128
-
 
 # Network
 net_arg = add_argument_group('Network')
-net_arg.add_argument('--hidden_dim', type=int, default=256, help='')
+net_arg.add_argument('--num_steps', type=int, default=150, help='')
+net_arg.add_argument('--cell_size', type=int, default=700, help='')
+net_arg.add_argument('--hyper_size', type=int, default=400, help='')
+net_arg.add_argument('--embed_size', type=int, default=128, help='')
+net_arg.add_argument('--hidden_size', type=int, default=256, help='')
 net_arg.add_argument('--num_layers', type=int, default=2, help='')
 net_arg.add_argument('--fast_layers', type=int, default=2, help='')
 net_arg.add_argument('--zoneout_c', type=float, default=0.5, help='')
 net_arg.add_argument('--zoneout_h', type=float, default=0.9, help='')
 net_arg.add_argument('--keep_prob', type=float, default=0.65, help='')
-net_arg.add_argument('--input_dim', type=int, default=len(c2i), help='')
+net_arg.add_argument('--input_dim', type=int, default=300, help='')
 net_arg.add_argument('--num_glimpse', type=int, default=1, help='')
 net_arg.add_argument('--use_terminal_symbol', type=str2bool, default=True, help='Not implemented yet')
 
@@ -36,9 +35,8 @@ net_arg.add_argument('--use_terminal_symbol', type=str2bool, default=True, help=
 data_arg = add_argument_group('Data')
 data_arg.add_argument('--task', type=str, default='ptb')
 data_arg.add_argument('--batch_size', type=int, default=128)
-data_arg.add_argument('--embed_size', type=int, default=128)
 data_arg.add_argument('--vocab_size', type=int, default=50)
-data_arg.add_argument('--input_size', type=int, default=len(c2i))
+data_arg.add_argument('--input_size', type=int, default=300)
 data_arg.add_argument('--min_data_length', type=int, default=5)
 data_arg.add_argument('--max_data_length', type=int, default=80)
 data_arg.add_argument('--train_num', type=int, default=1000000)
@@ -70,11 +68,12 @@ misc_arg.add_argument('--log_level', type=str, default='INFO', choices=['INFO', 
 misc_arg.add_argument('--log_dir', type=str, default='logs')
 misc_arg.add_argument('--data_dir', type=str, default='data')
 misc_arg.add_argument('--output_dir', type=str, default='outputs')
-misc_arg.add_argument('--load_path', type=str, default='')
+misc_arg.add_argument('--data_path', type=str, default='/Ujjawal/fast-slow-lstm/data' )
 misc_arg.add_argument('--debug', type=str2bool, default=False)
 misc_arg.add_argument('--gpu_memory_fraction', type=float, default=1.0)
 misc_arg.add_argument('--random_seed', type=int, default=123, help='')
 
 def get_config():
   config, unparsed = parser.parse_known_args()
-  return config, unparsed
+  return config
+

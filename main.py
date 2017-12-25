@@ -8,70 +8,126 @@ import torch.nn.functional as F
 import LNLSTM
 import FSRNN
 
-import helper
+import reader
+import config
+
+import time
+import numpy as np
 
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+#optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+args = config.get_config()
 
 
-class PTB_Model(object):
-	def __init__(self, config, data, name=None):
-        self.batch_size = batch_size = config.batch_size
-        self.num_steps = num_steps = config.num_steps
-        self.epoch_size = ((len(data) // batch_size) - 1) // num_steps
-        self.input_data, self.targets = reader.ptb_producer(
-            data, batch_size, num_steps, name=name)
+class PTB_Model(nn.Module):
+    def __init__(self, embedding_dim=args.hidden_size, num_steps=args.num_steps, batch_size=args.batch_size,
+                  vocab_size=args.vocab_size, num_layers=args.num_layers, dp_keep_prob=args.keep_prob,name=None):
+        super(PTB_Model, self).__init__()
+        self.batch_size = batch_size  
+        self.num_steps = num_steps 
+        self.vocab_size = vocab_size
 
-        F_size = config.cell_size
-        S_size = config.hyper_size
+        self.F_size = args.cell_size
+        self.S_size = args.hyper_size
 
-        num_steps = input_.num_steps
-        emb_size = config.embed_size
+        self.num_steps = num_steps
+        self.emb_size = embedding_dim
+        self.is_train = False
 
-        self.embedding = nn.Embedding(self.input_size, self.hidden_size)
+        self.embedding = nn.Embedding(self.vocab_size, self.emb_size)
 
-        F_cells = [LNLSTM.LN_LSTMCell(F_size, use_zoneout=True, is_training=is_training,
-                                      zoneout_keep_h=config.zoneout_h, zoneout_keep_c=config.zoneout_c)
-                   for _ in range(config.fast_layers)]
+        self.F_cells = [LNLSTM.LN_LSTMCell(self.F_size, use_zoneout=True, is_training=self.is_train,
+                                           zoneout_keep_h=args.zoneout_h, zoneout_keep_c=args.zoneout_c)
+                        for _ in range(args.fast_layers)]
 
-       	S_cell  = LNLSTM.LN_LSTMCell(S_size, use_zoneout=True, is_training=is_training,
-                                     zoneout_keep_h=config.zoneout_h, zoneout_keep_c=config.zoneout_c)
-
-
-       	FS_cell = FSRNN.FSRNNCell(F_cells, S_cell, config.keep_prob, is_training)
-
-       	self._initial_state = FS_cell.zero_state(batch_size, torch.FloatTensor)
-
-       	state = self._initial_state
-       	outputs = []
-       	for time_step in range(num_steps):
-       		out , state = FS_cell(inputs[:,time_step,:],state)
-       		outputs.append(out)
-
-       	output = torch.cat(outputs,dim =1).view([-1,F_size])
-       	
-       	softmax_w = helper.orthogonal_initializer([F_size, vocab_size])
-       	softmax_b = helper.orthogonal_initializer([vocab_size])
-
-       	logits = torch.mm(output , softmax_w) + softmax_b
-
-       	loss = criterion(logits,self.targets)
-
-       	loss.backward()
+        self.S_cell  = LNLSTM.LN_LSTMCell(self.S_size, use_zoneout=True, is_training=self.is_train,
+                                          zoneout_keep_h=args.zoneout_h, zoneout_keep_c=args.zoneout_c)
 
 
+        self.FS_cell = FSRNN.FSRNNCell(self.F_cells, self.S_cell, args.keep_prob, self.is_train)
+
+        self._initial_state = self.FS_cell.zero_state(batch_size, torch.FloatTensor)
+
+    def forward(self,inputs):
+        state = self._initial_state
+        outputs = []
+        for time_step in range(self.num_steps):
+            out , state = self.FS_cell(inputs[:,time_step,:],state)
+            outputs.append(out)
+
+        output = torch.cat(outputs,dim =1).view([-1,self.F_size])
+
+        softmax_w = helper.orthogonal_initializer([self.F_size, self.vocab_size])
+        softmax_b = helper.orthogonal_initializer([self.vocab_size])
+
+        logits = torch.mm(output , softmax_w) + softmax_b
+
+        return logits.view([self.num_steps,self.batch_size,self.vocab_size]), state
 
 
-       	self._cost = cost = nn.mean(loss) / batch_size
+def run_epoch(model, data, is_train=False, lr=1.0):
+    """Runs the model on the given data."""
+    if is_train:
+        model.is_train = True
+    else:
+        model.eval()
+    
+    epoch_size = ((len(data) // model.batch_size) - 1) // model.num_steps
+    start_time = time.time()
+    #hidden = model.init_hidden()
+    costs = 0.0
+    iters = 0.0
 
-        self._final_state = state
+    for step, (x, y) in enumerate(reader.ptb_iterator(data, model.batch_size, model.num_steps)):
+        inputs = Variable(torch.from_numpy(x.astype(np.int64)).transpose(0, 1).contiguous()).cuda()
+        model.zero_grad()
+        #hidden = repackage_hidden(hidden)
+        outputs, hidden = model(inputs)
+        targets = Variable(torch.from_numpy(y.astype(np.int64)).transpose(0, 1).contiguous()).cuda()
+        tt = torch.squeeze(targets.view(-1, model.batch_size * model.num_steps))
 
-        if not is_training: return
+        loss = criterion(outputs.view(-1, model.vocab_size), tt)
+        costs += loss.data[0] * model.num_steps
+        iters += model.num_steps
 
-        self._lr = 
+        if is_train:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm(model.parameters(), 0.25)
+            for p in model.parameters():
+                p.data.add_(-lr, p.grad.data)
+            if step % (epoch_size // 10) == 10:
+                print("{} perplexity: {:8.2f} speed: {} wps".format(step * 1.0 / epoch_size, np.exp(costs / iters),
+                                  iters * model.batch_size / (time.time() - start_time)))
+    return np.exp(costs / iters)
+
+if __name__ == "__main__":
+    raw_data = reader.ptb_raw_data(data_path=args.data_path)
+    train_data, valid_data, test_data, word_to_id, id_to_word = raw_data
+    vocab_size = len(word_to_id)
+    print('Vocabluary size: {}'.format(vocab_size))
+    model = PTB_Model(embedding_dim=args.hidden_size, num_steps=args.num_steps, batch_size=args.batch_size,
+                      vocab_size=vocab_size, num_layers=args.num_layers, dp_keep_prob=args.keep_prob)
+    model.cuda()
+    lr = args.lr_start
+    # decay factor for learning rate
+    lr_decay_base = args.lr_decay_rate
+    # we will not touch lr for the first m_flat_lr epochs
+    m_flat_lr = 14.0
+
+    print("########## Training ##########################")
+
+    for epoch in range(args.max_max_epoch):
+        lr_decay = lr_decay_base ** max(epoch - m_flat_lr, 0)
+        lr = lr * lr_decay # decay lr if it is time
+        train_p = run_epoch(model, train_data, True, lr)
+        print('Train perplexity at epoch {}: {:8.2f}'.format(epoch, train_p))
+        print('Validation perplexity at epoch {}: {:8.2f}'.format(epoch, run_epoch(model, valid_data)))
 
 
-def run_epoch(model):
-
-
+    print("########## Testing ##########################")
+    model.batch_size = 1 # to make sure we process all the data
+    print('Test Perplexity: {:8.2f}'.format(run_epoch(model, test_data)))
+    with open(args.save, 'wb') as f:
+        torch.save(model, f)
+    print("########## Done! ##########################")
 
