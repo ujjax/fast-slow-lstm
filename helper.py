@@ -18,11 +18,6 @@ def orthogonal_initializer(shape, scale=1.0, dtype=torch.FloatTensor):
 	
 
 def layer_norm_all(h, base, num_units):
-	# Layer Norm (faster version)
-	#
-	# Performs layer norm on multiple base at once (ie, i, g, j, o for lstm)
-	#
-	# Reshapes h in to perform layer norm in parallel
 	
 	h_reshape = h_reshape.view([-1, base, num_units])
 	mean = h_reshape.mean(dim = 2)
@@ -43,8 +38,7 @@ def layer_norm_all(h, base, num_units):
 
 
 def moments_for_layer_norm(x, axes=1, name=None):
-	# output for mean and variance should be [batch_size]
-	# from https://github.com/LeavesBreathe/tensorflow_with_latest_papers
+	
 	epsilon = 1e-3  # found this works best.
 	if not isinstance(axes, int): axes = axes[0]
 
@@ -54,21 +48,11 @@ def moments_for_layer_norm(x, axes=1, name=None):
 
 	return mean, variance
 
-	#mean = tf.reduce_mean(x, axes, keep_dims=True)
-	#variance = tf.sqrt(tf.reduce_mean(tf.square(x - mean), axes, keep_dims=True) + epsilon)
-	#return mean, variance
-
 
 def layer_norm(x, alpha_start=1.0, bias_start=0.0):
-	# derived from:
-	# https://github.com/LeavesBreathe/tensorflow_with_latest_papers, but simplified.
+	
 	with tf.variable_scope(scope):
 		num_units = int(x.size()[1])
-
-		#alpha = tf.get_variable('alpha', [num_units],
-		#                        initializer=tf.constant_initializer(alpha_start), dtype=tf.float32)
-		#bias = tf.get_variable('bias', [num_units],
-		#                       initializer=tf.constant_initializer(bias_start), dtype=tf.float32)
 
 		alpha = Variable(torch.ones(4*num_units).type(dtype), requires_grad=True)
 
