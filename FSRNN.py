@@ -5,16 +5,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 class FSRNNCell(object):
-    """Initialize the basic Fast-Slow RNN.
-                Args:
-                  fast_cells: A list of RNN cells that will be used for the fast RNN.
-                    The cells must be callable, implement zero_state() and all have the
-                    same hidden size
-                  slow_cell: A single RNN cell for the slow RNN.
-                  keep_prob: Keep probability for the non recurrent dropout. Any kind of
-                    recurrent dropout should be implemented in the RNN cells.
-                  training: If False, no dropout is applied.
-    """
+    
     def __init__(self, fast_cells,slow_cell, keep_prob = 1.0, training = True):
         super(FSRNNCell, self).__init__()
         self.fast_layers = len(fast_cells)
