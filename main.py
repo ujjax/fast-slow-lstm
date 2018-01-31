@@ -133,5 +133,4 @@ if __name__ == "__main__":
     print('Test Perplexity: {:8.2f}'.format(run_epoch(model, test_data)))
     with open(args.save, 'wb') as f:
         torch.save(model, f)
-    print("########## Done! ##########################")
-
+    
